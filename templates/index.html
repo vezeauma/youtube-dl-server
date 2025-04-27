@@ -29,6 +29,23 @@
     <div class="container d-flex w-100 p-3 flex-column">
       <header class="mb-auto"></header>
 
+      <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container-fluid">
+          <a class="navbar-brand" href="/youtube-dl">Home</a>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+            aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+          </button>
+          <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav">
+              <li class="nav-item">
+                <a class="nav-link" href="/youtube-dl/list">List of files</a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </nav>
+
       <main class="px-3">
         <h1 class="display-4">youtube-dl</h1>
         <p class="lead">
@@ -36,7 +53,7 @@
           from YouTube or
           <a
             class="text-info"
-            href="https://ytdl-org.github.io/youtube-dl/supportedsites.html"
+            href="https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md"
             >any other supported site</a
           >. The server will automatically download the highest quality version
           available.
@@ -55,23 +72,11 @@
             />
             <select class="form-select" name="format">
               <optgroup label="Video">
-                <option value="bestvideo">Best Video</option>
-                <option value="mp4">MP4</option>
-                <option value="flv">Flash Video (FLV)</option>
-                <option value="webm">WebM</option>
-                <option value="ogg">Ogg</option>
-                <option value="mkv">Matroska (MKV)</option>
-                <option value="avi">AVI</option>
+                <option value="mp4_full">MP4 (Full résolution)</option>
+                <option value="mp4_720">MP4 (720p H.264)</option>
               </optgroup>
               <optgroup label="Audio">
-                <option value="bestaudio">Best Audio</option>
-                <option value="aac">AAC</option>
-                <option value="flac">FLAC</option>
                 <option value="mp3">MP3</option>
-                <option value="m4a">M4A</option>
-                <option value="opus">Opus</option>
-                <option value="vorbis">Vorbis</option>
-                <option value="wav">WAV</option>
               </optgroup>
             </select>
             <button class="btn btn-primary" type="submit" id="button-submit">
