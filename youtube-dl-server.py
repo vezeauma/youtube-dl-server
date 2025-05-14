@@ -5,6 +5,7 @@ import logging
 import shutil
 import unicodedata
 import re
+from datetime import datetime
 
 from starlette.status import HTTP_303_SEE_OTHER
 from starlette.applications import Starlette
@@ -81,7 +82,12 @@ async def file_list(request):
     for filename in os.listdir(FINAL_DIR):
         filepath = os.path.join(FINAL_DIR, filename)
         if os.path.isfile(filepath):
-            files.append(filename)
+            mod_time = os.path.getmtime(filepath)
+            files.append({
+                "name": filename,
+                "modified": datetime.fromtimestamp(mod_time).strftime("%Y-%m-%d %H:%M:%S")
+            })
+    
 
     return templates.TemplateResponse("file_list.html", {"request": request, "files": files})
 
