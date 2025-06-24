@@ -35,6 +35,47 @@ LOGIN_USERNAME = config("LOGIN_USERNAME", cast=str, default="admin")
 LOGIN_PASSWORD = config("LOGIN_PASSWORD", cast=str, default="password")
 
 
+SUPPORTED_FORMATS = {
+    "mp3": {
+        "extension": ".mp3",
+        "format": "bestaudio/best",
+        "postprocessors": [
+            {
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "0",
+            },
+            {"key": "FFmpegMetadata"},
+        ],
+        "merge_output_format": None,
+    },
+    "mp4_720": {
+        "extension": ".mp4",
+        "format": "bestvideo[ext=mp4][height<=720][fps<=30]+bestaudio[ext=m4a]/best[ext=mp4][height<=720][fps<=30]",
+        "postprocessors": [
+            {
+                "key": "FFmpegVideoConvertor",
+                "preferedformat": "mp4",
+            }
+        ],
+        "merge_output_format": "mp4",
+        "audio_multistreams": True,
+        "video_multistreams": True,
+    },
+    "mp4_full": {
+        "extension": ".mp4",
+        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
+        "postprocessors": [
+            {
+                "key": "FFmpegVideoConvertor",
+                "preferedformat": "mp4",
+            }
+        ],
+        "merge_output_format": "mp4",
+    }
+}
+
+
 if os.path.exists(TMP_DIR):
     for filename in os.listdir(TMP_DIR):
         file_path = os.path.join(TMP_DIR, filename)
@@ -156,7 +197,7 @@ async def q_put(request):
         url="/youtube-dl?added=" + url, status_code=HTTP_303_SEE_OTHER, background=task
     )
 
-async def update_route(scope, receive, send):
+async def update_route(request):
     if not request.session.get("logged_in"):
         return RedirectResponse(url="/youtube-dl/login")
     task = BackgroundTask(update)
@@ -188,74 +229,33 @@ def update():
         print(e.output)
 
 def get_ydl_options(request_options):
-    extract_audio_format = None
-    recode_format = None
-    ydl_format = app_defaults["YDL_FORMAT"]
-    postprocessors = []
-    merge_output_format = "mp4"
-    # Options to control the order of streams
-    audio_multistreams = False
-    video_multistreams = False
+    # return options
+    requested_format = request_options.get("format", "mp4_full")
+    format_config = SUPPORTED_FORMATS.get(requested_format)
 
-    requested_format = request_options.get("format", "bestvideo")
-
-    if requested_format == "mp3":
-        extract_audio_format = "mp3"
-        postprocessors.extend([
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": extract_audio_format,
-                "preferredquality": "0",
-            },
-            {"key": "FFmpegMetadata"},
-        ])
-        ydl_format = "bestaudio/best"
-        merge_output_format = None  # No need to merge
-    elif requested_format == "bestaudio":
-        ydl_format = "bestaudio/best"
-        merge_output_format = None  # No need to merge
-    elif requested_format == "mp4_720":
-        # we force an MP4 conversion if it is not already MP4
-        recode_format = "mp4"
-        ydl_format = "bestvideo[ext=mp4][height<=720][fps<=30]+bestaudio[ext=m4a]/best[ext=mp4][height<=720][fps<=30]"
-        audio_multistreams = True
-        video_multistreams = True
-
-    elif requested_format == "mp4_full":
-        # no re-encoding, just mux to mp4 if needed
-        recode_format = "mp4"
-        ydl_format = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]"
-
-    if recode_format:
-        postprocessors.append(
-            {
-                "key": "FFmpegVideoConvertor",
-                "preferedformat": recode_format,
-            }
-        )
+    if not format_config:
+        raise ValueError(f"Format non supporté : {requested_format}")
 
     options = {
-        "format": ydl_format,
-        "postprocessors": postprocessors,
+        "format": format_config["format"],
+        "postprocessors": format_config.get("postprocessors", []),
         "outtmpl": app_defaults["YDL_OUTPUT_TEMPLATE"],
         "download_archive": app_defaults["YDL_ARCHIVE_FILE"],
         "updatetime": app_defaults["YDL_UPDATE_TIME"],
         "addmetadata": True,
-        "merge_output_format": merge_output_format,
+        "merge_output_format": format_config.get("merge_output_format"),
         "verbose": True,
     }
-    # Add options for stream order control
-    if audio_multistreams:
+
+    if format_config.get("audio_multistreams"):
         options["audio_multistreams"] = True
-    if video_multistreams:
+    if format_config.get("video_multistreams"):
         options["video_multistreams"] = True
-    
-    # If you really want to control the order, consider adding FFmpeg options for the final muxing
+
     if request_options.get("custom_order", False):
         options["postprocessor_args"] = {
-            'ffmpeg': ['-map', '0:a', '-map', '1:v']  # To force audio first
+            'ffmpeg': ['-map', '0:a', '-map', '1:v']
         }
-    
     return options
 
 def download(url, request_options):
@@ -269,19 +269,21 @@ def download(url, request_options):
             entries = info["entries"] if "entries" in info else [info]
 
             for video_info in entries:
-                filename_tmp = ydl.prepare_filename(video_info)
-                logger.info(f"TEMP FILE: {filename_tmp}")
-                filename_only = os.path.basename(filename_tmp)
-                filename = os.path.join(os.path.dirname(filename_tmp), cleanup_filename(filename_only))
+                extension = SUPPORTED_FORMATS.get(format_requested, {}).get("extension", "")
+                filename_tmp_full = ydl.prepare_filename(video_info)
+                filename_tmp_no_ext = os.path.splitext(filename_tmp_full)[0]
+                temp_filename=f"{filename_tmp_no_ext}{extension}"
+                logger.info(f"TEMP FILE: {temp_filename}")
+                filename_only = os.path.basename(temp_filename)
+                filename = os.path.join(os.path.dirname(temp_filename), cleanup_filename(filename_only))
 
                 # We move the temporary file if necessary
-                if filename_tmp != filename and os.path.exists(filename_tmp):
-                    shutil.move(filename_tmp, filename)
+                if temp_filename != filename and os.path.exists(temp_filename):
+                    shutil.move(temp_filename, filename)
                 logger.info(f"FILES: {filename}")
 
                 if os.path.exists(filename) and format_requested == "mp4_720":
-                    base, ext = os.path.splitext(filename)
-                    temp_filename = f"{base}_serato{ext}"
+                    temp_filename = f"{filename_tmp_no_ext}_serato{extension}"
 
                     handbrake_cmd = [
                         "HandBrakeCLI",

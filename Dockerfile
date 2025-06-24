@@ -1,10 +1,10 @@
 #
 # youtube-dl-server Dockerfile
 #
-# https://github.com/manbearwiz/youtube-dl-server-dockerfile
+# https://github.com/manbearwiz/youtube-dl-server/blob/main/Dockerfile
 #
 
-FROM python:alpine
+FROM python:3.12-alpine
 ENV USER_ID=1000
 ENV GROUP_ID=1000
 ENV USER_NAME=python-user
