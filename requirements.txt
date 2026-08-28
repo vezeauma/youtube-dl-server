@@ -1,2 +1,9 @@
-bottle
-youtube-dl
+aiofiles==24.1.0
+Jinja2==3.1.6
+python-multipart==0.0.32
+starlette==1.6.0
+uvicorn[standard]==0.52.4
+#uvicorn[standard]==0.34.2; platform_machine == 'x86_64'
+#uvicorn==0.34.1; platform_machine != 'x86_64'
+yt-dlp==2026.08.19
+itsdangerous==2.2.0
