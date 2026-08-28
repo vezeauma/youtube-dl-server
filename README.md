@@ -40,19 +40,37 @@ If you have python ^3.6.0 installed in your PATH you can simply run like this, p
 YDL_UPDATE_TIME=False python3 -m uvicorn youtube-dl-server:app --port 8123
 ```
 
-In this example, `YDL_UPDATE_TIME=False` is the same as the command line option `--no-mtime`.
+## Usage as an upstart service
 
-## Usage
+Create a file `/etc/init/youtube-dl.conf` with the following content,
+substituting `...pathToGitRepo...` with the actual path on your system:
 
-### Start a download remotely
+    start on startup
+    script
+        cd ...pathToGitRepo...
+        exec >> upstart.log
+        exec 2>&1
+        date
+        export BASE_URL=/...subdir.../youtube-dl
+        export PORT=8082
+        export DEST_DIR=$PWD/static
+        export ROBOTS_NOINDEX=True
+        python -u youtube-dl-server.py
+    end script
+
+Then start the service with:
+
+    service youtube-dl start
+
+## Start a download remotely
 
 Downloads can be triggered by supplying the `{{url}}` of the requested video through the Web UI or through the REST interface via curl, etc.
 
-#### HTML
+### HTML
 
 Just navigate to `http://{{host}}:8080/youtube-dl` and enter the requested `{{url}}`.
 
-#### Curl
+### Curl
 
 ```shell
 curl -X POST --data-urlencode "url={{url}}" http://{{host}}:8080/youtube-dl/q

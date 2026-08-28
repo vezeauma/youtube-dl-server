@@ -19,7 +19,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import HTMLResponse
 from starlette.responses import FileResponse
 
-from yt_dlp import YoutubeDL, version
+processed = set()
+app = Bottle()
 
 # Logging configuration
 logging.basicConfig(level=logging.INFO)
@@ -180,29 +181,40 @@ async def q_put(request):
     ui = form.get("ui")
     options = {"format": form.get("format")}
 
+@app.route('/youtube-dl/q', method='POST')
+def q_put():
+    url = request.forms.get("url")
+    audio_only = request.forms.get("audio-only") == 'on'
     if not url:
-        return JSONResponse(
-            {"success": False, "error": "/q called without a 'url' in form data"}
-        )
-
-    task = BackgroundTask(download, url, options)
-
+        return { "success" : False, "error" : "/q called without a 'url' query param" }
+    parsed_url = urlparse(url)
+    qparams = dict(parse_qsl(parsed_url.query))
+    if 'list' in qparams:
+        # This means that the video is part of a playlist:
+        # we need to remove the 'list' query param,
+        # otherwise youtube-dl will download the entire playlist.
+        del qparams['list']
+        url = urlunparse(parsed_url._replace(query=urlencode(qparams)))
+    dl_q.put((url, audio_only))
     print("Added url " + url + " to the download queue")
+    if audio_only and DEST_DIR.endswith('/static') and 'v' in qparams:
+        return template('processing', url=quote(url, safe=''), generated_file='{}.mp3'.format(qparams['v']))
+    return { "success" : True, "url" : url }
 
-    if not ui:
-        return JSONResponse(
-            {"success": True, "url": url, "options": options}, background=task
-        )
-    return RedirectResponse(
-        url="/youtube-dl?added=" + url, status_code=HTTP_303_SEE_OTHER, background=task
-    )
+def dl_worker():
+    while not done:
+        url, audio_only = dl_q.get()
+        download(url, audio_only)
+        dl_q.task_done()
 
 async def update_route(request):
     if not request.session.get("logged_in"):
         return RedirectResponse(url="/youtube-dl/login")
     task = BackgroundTask(update)
 
-    return JSONResponse({"output": "Initiated package update"}, background=task)
+async def delete_files(request):
+    if not request.session.get("logged_in"):
+        return RedirectResponse(url="/youtube-dl/login")
 
 # 🔤 Remove unwanted accents and characters
 def remove_accents(texte):
@@ -223,10 +235,11 @@ def update():
         output = subprocess.check_output(
             [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"]
         )
-
-        print(output.decode("utf-8"))
+        message = output.decode("utf-8")
+        logger.info(message)
+        logger.warning("⚠️ yt-dlp a été mis à jour. Veuillez redémarrer le conteneur pour appliquer les changements.")
     except subprocess.CalledProcessError as e:
-        print(e.output)
+        logger.error(f"❌ Erreur lors de la mise à jour : {e.output}")
 
 def get_ydl_options(request_options):
     # return options
@@ -245,6 +258,7 @@ def get_ydl_options(request_options):
         "addmetadata": True,
         "merge_output_format": format_config.get("merge_output_format"),
         "verbose": True,
+        "ignoreerrors": True,
     }
 
     if format_config.get("audio_multistreams"):
@@ -263,12 +277,18 @@ def download(url, request_options):
         format_requested = request_options.get("format")
         with YoutubeDL(get_ydl_options(request_options)) as ydl:
             info = ydl.extract_info(url, download=False)
+            if not info:
+                logger.error(f"❌ Could not extract info for {url}")
+                return
+
             ydl.download([url])
 
             # Manage videos individually (playlist or single video)
-            entries = info["entries"] if "entries" in info else [info]
+            entries = info.get("entries", [info])
 
             for video_info in entries:
+                if not video_info:
+                    continue
                 extension = SUPPORTED_FORMATS.get(format_requested, {}).get("extension", "")
                 filename_tmp_full = ydl.prepare_filename(video_info)
                 filename_tmp_no_ext = os.path.splitext(filename_tmp_full)[0]
@@ -283,7 +303,9 @@ def download(url, request_options):
                 logger.info(f"FILES: {filename}")
 
                 if os.path.exists(filename) and format_requested == "mp4_720":
+                    #base, ext = os.path.splitext(filename)
                     temp_filename = f"{filename_tmp_no_ext}_serato{extension}"
+
 
                     handbrake_cmd = [
                         "HandBrakeCLI",
@@ -302,9 +324,12 @@ def download(url, request_options):
                         logger.error(f"❌ Failed to add metadata : {headbrake_result.stderr}")
 
                 # Move to final folder
-                final_path = os.path.join(FINAL_DIR, os.path.basename(filename))
-                shutil.move(filename, final_path)
-                logger.info(f"✅ Copied to : {final_path}")
+                if os.path.exists(filename):
+                    final_path = os.path.join(FINAL_DIR, os.path.basename(filename))
+                    shutil.move(filename, final_path)
+                    logger.info(f"✅ Copied to : {final_path}")
+                else:
+                    logger.warning(f"❌ File not found, skipping final move: {filename}")
 
     except Exception as e:
         logger.error(f"❌ Download or merge failed for {url}: {e}")
@@ -328,10 +353,10 @@ app = Starlette(
         Middleware(
             SessionMiddleware, 
             secret_key=SECRET_KEY,
-            max_age=604800 # 1 semaine en secondes
+            max_age=604800, # 1 semaine en secondes
             )
     ])
 
-print("Updating youtube-dl to the newest version")
-logger.info("Updating yt-dlp to the newest version")
-update()
+# print("Updating youtube-dl to the newest version")
+# logger.info("Updating yt-dlp to the newest version")
+# update()

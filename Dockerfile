@@ -12,10 +12,10 @@ ENV GROUP_NAME=python-user
 ENV PATH=/home/${USER_NAME}/.local/bin:${PATH}
 
 RUN addgroup -g $GROUP_ID $GROUP_NAME && \
-  adduser --shell /sbin/nologin --disabled-password \
-  --uid $USER_ID -G wheel --ingroup $GROUP_NAME $USER_NAME
+    adduser --shell /sbin/nologin --disabled-password \
+    --uid $USER_ID -G wheel --ingroup $GROUP_NAME $USER_NAME
 
-RUN apk add --no-cache ffmpeg x264 ffmpeg-libs tzdata sudo \ 
+RUN apk add --no-cache ffmpeg x264 ffmpeg-libs tzdata sudo nodejs \ 
   && apk --update-cache add --virtual build-dependencies gcc libc-dev make \
   && apk del build-dependencies
 
@@ -68,8 +68,11 @@ RUN apk add --no-cache --update \
   zlib-dev \
   libva-dev \
   libdrm-dev \
+  linux-headers && \
 # Step 2 : Clone and compile HandBrake
-  && git clone https://github.com/HandBrake/HandBrake.git /tmp/HandBrake \
+  export CFLAGS="-D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64" && \
+  export CXXFLAGS="-D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64" && \
+  git clone https://github.com/HandBrake/HandBrake.git /tmp/HandBrake \
   && cd /tmp/HandBrake \
   && ./configure --launch-jobs=$(nproc) --launch --disable-gtk \
   && make -C build install \
@@ -78,8 +81,8 @@ RUN apk add --no-cache --update \
   && rm -rf /tmp/HandBrake
 
 RUN mkdir -p /usr/src/app && \
-  mkdir -p /tmp/youtube-dl && \
-  chown $USER_NAME:$GROUP_NAME /tmp/youtube-dl -R
+    mkdir -p /tmp/youtube-dl && \
+    chown $USER_NAME:$GROUP_NAME /tmp/youtube-dl -R
 
 COPY --chown=$USER_NAME:$GROUP_NAME templates/ /usr/src/app/templates/
 COPY --chown=$USER_NAME:$GROUP_NAME youtube-dl-server.py /usr/src/app/
@@ -93,7 +96,7 @@ WORKDIR /usr/src/app
 COPY requirements.txt /usr/src/app/
 
 RUN pip install --no-cache-dir -r requirements.txt 
-
+  
 EXPOSE 8080
 
 VOLUME ["/youtube-dl"]
